@@ -296,53 +296,65 @@ export default function TetrisWebApp() {
           <Card className="tetris-card-shell tetris-board-card">
             <CardContent className="tetris-board-content">
               <div ref={boardSlotRef} className="tetris-board-slot">
-                <div className="tetris-board-bezel">
-                  <div
-                    className="tetris-board-grid"
-                    style={{
-                      gridTemplateColumns: `repeat(${BOARD_WIDTH}, ${boardCellPx}px)`,
-                      gridAutoRows: `${boardCellPx}px`,
-                    }}
-                  >
-                    {renderedBoard.flatMap((row, rowIndex) =>
-                      row.map((cell, colIndex) => {
-                        const isGhost = typeof cell === "object" && cell !== null && "ghostKey" in cell;
-                        const absCell = typeof cell === "number" ? Math.abs(cell) : 0;
-                        const pieceClass = isGhost
-                          ? PIECES[cell.ghostKey].color
-                          : absCell
-                            ? PIECE_COLOR_BY_ID[absCell]
-                            : "";
-                        const ghostStyle = isGhost
-                          ? {
-                              borderColor: PIECES[cell.ghostKey].ghost,
-                              boxShadow: `inset 0 0 0 1px ${PIECES[cell.ghostKey].ghost}`,
-                            }
-                          : undefined;
+                <div className="tetris-board-stage">
+                  <div className="tetris-board-bezel">
+                    <div
+                      className="tetris-board-grid"
+                      style={{
+                        gridTemplateColumns: `repeat(${BOARD_WIDTH}, ${boardCellPx}px)`,
+                        gridAutoRows: `${boardCellPx}px`,
+                      }}
+                    >
+                      {renderedBoard.flatMap((row, rowIndex) =>
+                        row.map((cell, colIndex) => {
+                          const isGhost = typeof cell === "object" && cell !== null && "ghostKey" in cell;
+                          const absCell = typeof cell === "number" ? Math.abs(cell) : 0;
+                          const pieceClass = isGhost
+                            ? PIECES[cell.ghostKey].color
+                            : absCell
+                              ? PIECE_COLOR_BY_ID[absCell]
+                              : "";
+                          const ghostStyle = isGhost
+                            ? {
+                                borderColor: PIECES[cell.ghostKey].ghost,
+                                boxShadow: `inset 0 0 0 1px ${PIECES[cell.ghostKey].ghost}`,
+                              }
+                            : undefined;
 
-                        return (
-                          <div
-                            key={`${rowIndex}-${colIndex}`}
-                            className={`tetris-cell${isGhost ? " tetris-cell--ghost" : ""}${!isGhost && absCell ? ` tetris-cell--block ${pieceClass}` : ""}${!isGhost && !absCell ? " tetris-cell--hole" : ""}`}
-                            style={{ width: boardCellPx, height: boardCellPx, ...ghostStyle }}
-                          />
-                        );
-                      })
+                          return (
+                            <div
+                              key={`${rowIndex}-${colIndex}`}
+                              className={`tetris-cell${isGhost ? " tetris-cell--ghost" : ""}${!isGhost && absCell ? ` tetris-cell--block ${pieceClass}` : ""}${!isGhost && !absCell ? " tetris-cell--hole" : ""}`}
+                              style={{ width: boardCellPx, height: boardCellPx, ...ghostStyle }}
+                            />
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {game.isGameOver && (
+                      <div className="tetris-gameover-backdrop">
+                        <div className="tetris-gameover-panel">
+                          <div className="tetris-gameover-title">Game Over</div>
+                          <div className="tetris-gameover-label">Final Score</div>
+                          <div className="tetris-gameover-score">{game.score}</div>
+                          <Button size="lg" className="tetris-gameover-btn" onClick={resetGame}>
+                            Restart
+                          </Button>
+                        </div>
+                      </div>
                     )}
                   </div>
 
-                  {game.isGameOver && (
-                    <div className="tetris-gameover-backdrop">
-                      <div className="tetris-gameover-panel">
-                        <div className="tetris-gameover-title">Game Over</div>
-                        <div className="tetris-gameover-label">Final Score</div>
-                        <div className="tetris-gameover-score">{game.score}</div>
-                        <Button size="lg" className="tetris-gameover-btn" onClick={resetGame}>
-                          Restart
-                        </Button>
+                  <div className="tetris-opponent-dock">
+                    <div className="tetris-opponent-overlay-head">
+                      <div className="tetris-stat-label">Opponent</div>
+                      <div className="tetris-opponent-overlay-name">
+                        {opponentPlayer?.name ?? "Waiting"}
                       </div>
                     </div>
-                  )}
+                    <OpponentBoard snapshot={opponentSnapshot} compact />
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -434,12 +446,6 @@ export default function TetrisWebApp() {
                     ))
                   )}
                 </div>
-              </div>
-
-              <div className="tetris-panel">
-                <div className="tetris-stat-label">Opponent</div>
-                <div className="tetris-opponent-title">{opponentPlayer?.name ?? "Waiting for opponent"}</div>
-                <OpponentBoard snapshot={opponentSnapshot} />
               </div>
             </CardContent>
           </Card>

@@ -5,13 +5,13 @@ const PIECE_COLOR_BY_ID = Object.values(PIECES).reduce((acc, piece) => {
   return acc;
 }, {});
 
-export function OpponentBoard({ snapshot }) {
+export function OpponentBoard({ snapshot, compact = false }) {
   if (!snapshot) {
     return <div className="tetris-opponent-empty">Waiting for opponent state</div>;
   }
 
   return (
-    <div className="tetris-opponent-wrap">
+    <div className={`tetris-opponent-wrap${compact ? " tetris-opponent-wrap--compact" : ""}`}>
       <div
         className="tetris-opponent-grid"
         style={{ gridTemplateColumns: `repeat(${BOARD_WIDTH}, 1fr)` }}
@@ -30,8 +30,8 @@ export function OpponentBoard({ snapshot }) {
       </div>
 
       <div className="tetris-opponent-meta">
-        <div>Piece: {PIECE_KEYS.includes(snapshot.activeKey) ? snapshot.activeKey : "-"}</div>
-        <div>Hold: {snapshot.holdKey ?? "-"}</div>
+        <div>P: {PIECE_KEYS.includes(snapshot.activeKey) ? snapshot.activeKey : "-"}</div>
+        <div>H: {snapshot.holdKey ?? "-"}</div>
         <div>Lines: {snapshot.lines}</div>
         <div>Score: {snapshot.score}</div>
       </div>
