@@ -1,4 +1,4 @@
-# Tetris Web
+# Tetris Web With AI
 
 React + Vite single-player Tetris with a PartyKit multiplayer draft.
 
