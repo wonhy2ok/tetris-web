@@ -1,309 +1,25 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Play, Pause, RotateCw, RefreshCw, ArrowDown, ArrowLeft, ArrowRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Play, Pause, RotateCw, RefreshCw, ArrowDown, ArrowLeft, ArrowRight } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { BOARD_HEIGHT, BOARD_WIDTH, PIECES } from "@/game/pieces";
+import { toOpponentSnapshot } from "@/game/serialize";
+import { useTetrisGame } from "@/hooks/useTetrisGame";
+import { useRoomConnection } from "@/multiplayer/client";
+import { getDefaultEndpointForProvider, REALTIME_PROVIDERS } from "@/multiplayer/providers";
+import { OpponentBoard } from "@/components/OpponentBoard";
 import "./App.css";
 
-const BOARD_WIDTH = 10;
-const BOARD_HEIGHT = 20;
-/** Padding around the cell grid inside the bezel (Tailwind p-1 outer + p-2 inner, rounded). */
 const BOARD_BEZEL_CHROME = 28;
 const BOARD_CELL_MIN = 14;
 const BOARD_CELL_MAX = 128;
-const EMPTY = 0;
-const BASE_DROP_MS = 700;
-const MIN_DROP_MS = 120;
 
-const PIECES = {
-  I: {
-    id: 1,
-    color: "bg-cyan-400",
-    ghost: "rgba(34, 211, 238, 0.55)",
-    cells: [
-      [
-        [0, 0, 0, 0],
-        [1, 1, 1, 1],
-        [0, 0, 0, 0],
-        [0, 0, 0, 0],
-      ],
-      [
-        [0, 0, 1, 0],
-        [0, 0, 1, 0],
-        [0, 0, 1, 0],
-        [0, 0, 1, 0],
-      ],
-      [
-        [0, 0, 0, 0],
-        [0, 0, 0, 0],
-        [1, 1, 1, 1],
-        [0, 0, 0, 0],
-      ],
-      [
-        [0, 1, 0, 0],
-        [0, 1, 0, 0],
-        [0, 1, 0, 0],
-        [0, 1, 0, 0],
-      ],
-    ],
-  },
-  O: {
-    id: 2,
-    color: "bg-yellow-400",
-    ghost: "rgba(250, 204, 21, 0.55)",
-    cells: [
-      [
-        [1, 1],
-        [1, 1],
-      ],
-      [
-        [1, 1],
-        [1, 1],
-      ],
-      [
-        [1, 1],
-        [1, 1],
-      ],
-      [
-        [1, 1],
-        [1, 1],
-      ],
-    ],
-  },
-  T: {
-    id: 3,
-    color: "bg-violet-500",
-    ghost: "rgba(139, 92, 246, 0.55)",
-    cells: [
-      [
-        [0, 1, 0],
-        [1, 1, 1],
-        [0, 0, 0],
-      ],
-      [
-        [0, 1, 0],
-        [0, 1, 1],
-        [0, 1, 0],
-      ],
-      [
-        [0, 0, 0],
-        [1, 1, 1],
-        [0, 1, 0],
-      ],
-      [
-        [0, 1, 0],
-        [1, 1, 0],
-        [0, 1, 0],
-      ],
-    ],
-  },
-  S: {
-    id: 4,
-    color: "bg-green-500",
-    ghost: "rgba(34, 197, 94, 0.55)",
-    cells: [
-      [
-        [0, 1, 1],
-        [1, 1, 0],
-        [0, 0, 0],
-      ],
-      [
-        [0, 1, 0],
-        [0, 1, 1],
-        [0, 0, 1],
-      ],
-      [
-        [0, 0, 0],
-        [0, 1, 1],
-        [1, 1, 0],
-      ],
-      [
-        [1, 0, 0],
-        [1, 1, 0],
-        [0, 1, 0],
-      ],
-    ],
-  },
-  Z: {
-    id: 5,
-    color: "bg-red-500",
-    ghost: "rgba(239, 68, 68, 0.55)",
-    cells: [
-      [
-        [1, 1, 0],
-        [0, 1, 1],
-        [0, 0, 0],
-      ],
-      [
-        [0, 0, 1],
-        [0, 1, 1],
-        [0, 1, 0],
-      ],
-      [
-        [0, 0, 0],
-        [1, 1, 0],
-        [0, 1, 1],
-      ],
-      [
-        [0, 1, 0],
-        [1, 1, 0],
-        [1, 0, 0],
-      ],
-    ],
-  },
-  J: {
-    id: 6,
-    color: "bg-blue-500",
-    ghost: "rgba(59, 130, 246, 0.55)",
-    cells: [
-      [
-        [1, 0, 0],
-        [1, 1, 1],
-        [0, 0, 0],
-      ],
-      [
-        [0, 1, 1],
-        [0, 1, 0],
-        [0, 1, 0],
-      ],
-      [
-        [0, 0, 0],
-        [1, 1, 1],
-        [0, 0, 1],
-      ],
-      [
-        [0, 1, 0],
-        [0, 1, 0],
-        [1, 1, 0],
-      ],
-    ],
-  },
-  L: {
-    id: 7,
-    color: "bg-orange-500",
-    ghost: "rgba(249, 115, 22, 0.55)",
-    cells: [
-      [
-        [0, 0, 1],
-        [1, 1, 1],
-        [0, 0, 0],
-      ],
-      [
-        [0, 1, 0],
-        [0, 1, 0],
-        [0, 1, 1],
-      ],
-      [
-        [0, 0, 0],
-        [1, 1, 1],
-        [1, 0, 0],
-      ],
-      [
-        [1, 1, 0],
-        [0, 1, 0],
-        [0, 1, 0],
-      ],
-    ],
-  },
-};
-
-const PIECE_KEYS = Object.keys(PIECES);
 const PIECE_COLOR_BY_ID = Object.values(PIECES).reduce((acc, piece) => {
   acc[piece.id] = piece.color;
   return acc;
 }, {});
-
-function createEmptyBoard() {
-  return Array.from({ length: BOARD_HEIGHT }, () => Array(BOARD_WIDTH).fill(EMPTY));
-}
-
-function randomPieceKey() {
-  return PIECE_KEYS[Math.floor(Math.random() * PIECE_KEYS.length)];
-}
-
-function createNextQueue(size = 3) {
-  return Array.from({ length: size }, () => randomPieceKey());
-}
-
-function makePiece(key = randomPieceKey()) {
-  return {
-    key,
-    rotation: 0,
-    x: Math.floor(BOARD_WIDTH / 2) - 2,
-    y: -1,
-  };
-}
-
-function getShape(piece) {
-  return PIECES[piece.key].cells[piece.rotation];
-}
-
-function collides(board, piece) {
-  const shape = getShape(piece);
-  for (let row = 0; row < shape.length; row += 1) {
-    for (let col = 0; col < shape[row].length; col += 1) {
-      if (!shape[row][col]) continue;
-      const x = piece.x + col;
-      const y = piece.y + row;
-      if (x < 0 || x >= BOARD_WIDTH || y >= BOARD_HEIGHT) return true;
-      if (y >= 0 && board[y][x] !== EMPTY) return true;
-    }
-  }
-  return false;
-}
-
-function mergePiece(board, piece) {
-  const next = board.map((row) => [...row]);
-  const shape = getShape(piece);
-  const id = PIECES[piece.key].id;
-  for (let row = 0; row < shape.length; row += 1) {
-    for (let col = 0; col < shape[row].length; col += 1) {
-      if (!shape[row][col]) continue;
-      const x = piece.x + col;
-      const y = piece.y + row;
-      if (y >= 0 && y < BOARD_HEIGHT && x >= 0 && x < BOARD_WIDTH) {
-        next[y][x] = id;
-      }
-    }
-  }
-  return next;
-}
-
-function clearLines(board) {
-  const remaining = board.filter((row) => row.some((cell) => cell === EMPTY));
-  const cleared = BOARD_HEIGHT - remaining.length;
-  const refill = Array.from({ length: cleared }, () => Array(BOARD_WIDTH).fill(EMPTY));
-  return {
-    board: [...refill, ...remaining],
-    cleared,
-  };
-}
-
-function lineScore(lines) {
-  if (lines === 1) return 100;
-  if (lines === 2) return 300;
-  if (lines === 3) return 500;
-  if (lines === 4) return 800;
-  return 0;
-}
-
-function rotateWithKick(board, piece) {
-  const rotated = { ...piece, rotation: (piece.rotation + 1) % 4 };
-  const kicks = [0, -1, 1, -2, 2];
-  for (const dx of kicks) {
-    const candidate = { ...rotated, x: rotated.x + dx };
-    if (!collides(board, candidate)) return candidate;
-  }
-  return piece;
-}
-
-function hardDropY(board, piece) {
-  let candidate = { ...piece };
-  while (!collides(board, { ...candidate, y: candidate.y + 1 })) {
-    candidate.y += 1;
-  }
-  return candidate;
-}
 
 function PreviewPiece({ pieceKey }) {
   if (!pieceKey) return null;
@@ -313,10 +29,7 @@ function PreviewPiece({ pieceKey }) {
   const cols = shape[0].length;
 
   return (
-    <div
-      className="tetris-preview-grid"
-      style={{ gridTemplateColumns: `repeat(${cols}, auto)` }}
-    >
+    <div className="tetris-preview-grid" style={{ gridTemplateColumns: `repeat(${cols}, auto)` }}>
       {shape.flatMap((row, rowIndex) =>
         row.map((cell, colIndex) => (
           <div
@@ -330,31 +43,54 @@ function PreviewPiece({ pieceKey }) {
 }
 
 export default function TetrisWebApp() {
-  const [board, setBoard] = useState(createEmptyBoard);
-  const [current, setCurrent] = useState(() => makePiece());
-  const [nextQueue, setNextQueue] = useState(() => createNextQueue());
-  const [holdKey, setHoldKey] = useState(null);
-  const [hasHeldThisTurn, setHasHeldThisTurn] = useState(false);
-  const [score, setScore] = useState(0);
-  const [lines, setLines] = useState(0);
-  const [level, setLevel] = useState(1);
-  const [isRunning, setIsRunning] = useState(true);
-  const [isGameOver, setIsGameOver] = useState(false);
-  const boardRef = useRef(board);
-  const currentRef = useRef(current);
-  const nextQueueRef = useRef(nextQueue);
-  const isRunningRef = useRef(isRunning);
-  const isGameOverRef = useRef(isGameOver);
+  const {
+    game,
+    renderedBoard,
+    isRunning,
+    setIsRunning,
+    resetGame,
+    move,
+    rotate,
+    softDrop,
+    hardDrop,
+    hold,
+    receiveGarbage,
+    consumePendingGarbage,
+  } = useTetrisGame();
+
   const boardSlotRef = useRef(null);
-  /** Square cells; size from min(slotW/10, slotH/20) so board aspect stays 1:2. */
+  const lastStartedAtRef = useRef(null);
+  const lastGarbageAtRef = useRef(null);
   const [boardCellPx, setBoardCellPx] = useState(26);
+  const [providerInput, setProviderInput] = useState(REALTIME_PROVIDERS.PARTYKIT);
+  const [endpointInput, setEndpointInput] = useState(getDefaultEndpointForProvider(REALTIME_PROVIDERS.PARTYKIT));
+  const [roomIdInput, setRoomIdInput] = useState("demo-room");
+  const [playerNameInput, setPlayerNameInput] = useState("Player");
+  const [joinedRoomId, setJoinedRoomId] = useState(null);
+  const [joinedPlayerName, setJoinedPlayerName] = useState("");
+  const [joinedEndpoint, setJoinedEndpoint] = useState("");
+  const [joinedProvider, setJoinedProvider] = useState(REALTIME_PROVIDERS.PARTYKIT);
+
+  const room = useRoomConnection({
+    provider: joinedProvider,
+    endpoint: joinedEndpoint,
+    roomId: joinedRoomId,
+    playerName: joinedPlayerName,
+    enabled: Boolean(joinedEndpoint && joinedRoomId && joinedPlayerName),
+  });
+
+  useEffect(() => {
+    setEndpointInput(getDefaultEndpointForProvider(providerInput));
+  }, [providerInput]);
 
   useLayoutEffect(() => {
     const el = boardSlotRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+
     const ro = new ResizeObserver((entries) => {
       const cr = entries[0]?.contentRect;
       if (!cr || cr.width < 40 || cr.height < 40) return;
+
       const innerW = cr.width - BOARD_BEZEL_CHROME;
       const innerH = cr.height - BOARD_BEZEL_CHROME;
       const byW = Math.floor(innerW / BOARD_WIDTH);
@@ -363,165 +99,32 @@ export default function TetrisWebApp() {
       const clamped = Math.max(BOARD_CELL_MIN, Math.min(next, BOARD_CELL_MAX));
       setBoardCellPx((prev) => (prev === clamped ? prev : clamped));
     });
+
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
   useEffect(() => {
-    boardRef.current = board;
-  }, [board]);
-
-  useEffect(() => {
-    currentRef.current = current;
-  }, [current]);
-
-  useEffect(() => {
-    nextQueueRef.current = nextQueue;
-  }, [nextQueue]);
-
-  useEffect(() => {
-    isRunningRef.current = isRunning;
-  }, [isRunning]);
-
-  useEffect(() => {
-    isGameOverRef.current = isGameOver;
-  }, [isGameOver]);
-
-  const spawnNextPiece = useCallback((activeBoard) => {
-    const [nextKey, ...restQueue] = nextQueueRef.current;
-    const fresh = makePiece(nextKey);
-    setNextQueue([...restQueue, randomPieceKey()]);
-    if (collides(activeBoard, fresh)) {
-      setIsGameOver(true);
-      setIsRunning(false);
-      return null;
-    }
-    return fresh;
-  }, []);
-
-  const lockPiece = useCallback((lockedPiece) => {
-    const merged = mergePiece(boardRef.current, lockedPiece);
-    const { board: clearedBoard, cleared } = clearLines(merged);
-    setBoard(clearedBoard);
-    if (cleared > 0) {
-      setLines((prev) => {
-        const nextLines = prev + cleared;
-        setLevel(Math.floor(nextLines / 10) + 1);
-        return nextLines;
-      });
-      setScore((prev) => prev + lineScore(cleared) * level);
-    }
-    const fresh = spawnNextPiece(clearedBoard);
-    if (fresh) {
-      setHasHeldThisTurn(false);
-      setCurrent(fresh);
-    }
-  }, [level, spawnNextPiece]);
-
-  const stepDown = useCallback(() => {
-    if (!isRunningRef.current || isGameOverRef.current) return;
-    const piece = currentRef.current;
-    const candidate = { ...piece, y: piece.y + 1 };
-    if (!collides(boardRef.current, candidate)) {
-      setCurrent(candidate);
-      return;
-    }
-    lockPiece(piece);
-  }, [lockPiece]);
-
-  const resetGame = useCallback(() => {
-    const freshBoard = createEmptyBoard();
-    const first = makePiece();
-    setBoard(freshBoard);
-    setCurrent(first);
-    setNextQueue(createNextQueue());
-    setHoldKey(null);
-    setHasHeldThisTurn(false);
-    setScore(0);
-    setLines(0);
-    setLevel(1);
-    setIsGameOver(false);
-    setIsRunning(true);
-  }, []);
-
-  useEffect(() => {
-    const dropMs = Math.max(MIN_DROP_MS, BASE_DROP_MS - (level - 1) * 60);
-    const timer = window.setInterval(() => {
-      stepDown();
-    }, dropMs);
-    return () => window.clearInterval(timer);
-  }, [level, stepDown]);
-
-  const move = useCallback((dx) => {
-    if (!isRunningRef.current || isGameOverRef.current) return;
-    const piece = currentRef.current;
-    const candidate = { ...piece, x: piece.x + dx };
-    if (!collides(boardRef.current, candidate)) setCurrent(candidate);
-  }, []);
-
-  const softDrop = useCallback(() => {
-    if (!isRunningRef.current || isGameOverRef.current) return;
-    const piece = currentRef.current;
-    const candidate = { ...piece, y: piece.y + 1 };
-    if (!collides(boardRef.current, candidate)) {
-      setCurrent(candidate);
-      setScore((prev) => prev + 1);
-    } else {
-      lockPiece(piece);
-    }
-  }, [lockPiece]);
-
-  const hardDrop = useCallback(() => {
-    if (!isRunningRef.current || isGameOverRef.current) return;
-    const dropped = hardDropY(boardRef.current, currentRef.current);
-    const distance = dropped.y - currentRef.current.y;
-    setScore((prev) => prev + distance * 2);
-    setCurrent(dropped);
-    lockPiece(dropped);
-  }, [lockPiece]);
-
-  const rotate = useCallback(() => {
-    if (!isRunningRef.current || isGameOverRef.current) return;
-    setCurrent((prev) => rotateWithKick(boardRef.current, prev));
-  }, []);
-
-  const hold = useCallback(() => {
-    if (!isRunningRef.current || isGameOverRef.current || hasHeldThisTurn) return;
-
-    const activePiece = currentRef.current;
-    setHasHeldThisTurn(true);
-
-    if (!holdKey) {
-      setHoldKey(activePiece.key);
-      const fresh = spawnNextPiece(boardRef.current);
-      if (fresh) setCurrent(fresh);
-      return;
-    }
-
-    const swapped = makePiece(holdKey);
-    setHoldKey(activePiece.key);
-    if (collides(boardRef.current, swapped)) {
-      setIsGameOver(true);
-      setIsRunning(false);
-      return;
-    }
-    setCurrent(swapped);
-  }, [hasHeldThisTurn, holdKey, spawnNextPiece]);
-
-  useEffect(() => {
     const onKeyDown = (event) => {
-      if (["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", " ", "Shift"].includes(event.key) || event.key.toLowerCase() === "c") {
+      if (
+        ["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", " ", "Shift"].includes(event.key) ||
+        event.key.toLowerCase() === "c"
+      ) {
         event.preventDefault();
       }
+
       if (event.key.toLowerCase() === "p") {
         setIsRunning((prev) => !prev);
         return;
       }
+
       if (event.key.toLowerCase() === "r") {
         resetGame();
         return;
       }
-      if (!isRunningRef.current || isGameOverRef.current) return;
+
+      if (!isRunning || game.isGameOver) return;
+
       if (event.key === "ArrowLeft") move(-1);
       if (event.key === "ArrowRight") move(1);
       if (event.key === "ArrowDown") softDrop();
@@ -532,39 +135,75 @@ export default function TetrisWebApp() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [hardDrop, hold, move, resetGame, rotate, softDrop]);
+  }, [game.isGameOver, hardDrop, hold, isRunning, move, resetGame, rotate, setIsRunning, softDrop]);
 
-  const ghostPiece = useMemo(() => hardDropY(board, current), [board, current]);
+  useEffect(() => {
+    if (!room.state.isConnected) return;
+    room.sendState(toOpponentSnapshot(game));
+  }, [game, room]);
 
-  const renderedBoard = useMemo(() => {
-    const canvas = board.map((row) => [...row]);
+  useEffect(() => {
+    if (!game.pendingGarbage) return;
 
-    const ghostShape = getShape(ghostPiece);
-    for (let row = 0; row < ghostShape.length; row += 1) {
-      for (let col = 0; col < ghostShape[row].length; col += 1) {
-        if (!ghostShape[row][col]) continue;
-        const x = ghostPiece.x + col;
-        const y = ghostPiece.y + row;
-        if (y >= 0 && y < BOARD_HEIGHT && x >= 0 && x < BOARD_WIDTH && canvas[y][x] === EMPTY) {
-          canvas[y][x] = { ghostKey: current.key };
-        }
-      }
+    const amount = consumePendingGarbage();
+    if (!amount) return;
+    if (room.state.isConnected && room.state.phase === "playing") {
+      room.sendAttack(amount);
     }
+  }, [consumePendingGarbage, game.pendingGarbage, room]);
 
-    const shape = getShape(current);
-    for (let row = 0; row < shape.length; row += 1) {
-      for (let col = 0; col < shape[row].length; col += 1) {
-        if (!shape[row][col]) continue;
-        const x = current.x + col;
-        const y = current.y + row;
-        if (y >= 0 && y < BOARD_HEIGHT && x >= 0 && x < BOARD_WIDTH) {
-          canvas[y][x] = PIECES[current.key].id;
-        }
-      }
-    }
+  useEffect(() => {
+    const lastGarbage = room.state.lastGarbage;
+    if (!lastGarbage) return;
+    if (lastGarbageAtRef.current === lastGarbage.receivedAt) return;
 
-    return canvas;
-  }, [board, current, ghostPiece]);
+    lastGarbageAtRef.current = lastGarbage.receivedAt;
+    receiveGarbage(lastGarbage.amount, lastGarbage.holeColumn ?? undefined);
+  }, [receiveGarbage, room.state.lastGarbage]);
+
+  useEffect(() => {
+    if (room.state.phase !== "playing" || !room.state.startedAt) return;
+    if (lastStartedAtRef.current === room.state.startedAt) return;
+
+    lastStartedAtRef.current = room.state.startedAt;
+    resetGame();
+  }, [resetGame, room.state.phase, room.state.startedAt]);
+
+  useEffect(() => {
+    if (!room.state.isConnected || !game.isGameOver) return;
+    room.sendGameOver();
+  }, [game.isGameOver, room]);
+
+  const opponentId = useMemo(
+    () => room.state.players.find((player) => player.id !== room.state.selfId)?.id ?? null,
+    [room.state.players, room.state.selfId]
+  );
+
+  const opponentPlayer = useMemo(
+    () => room.state.players.find((player) => player.id === opponentId) ?? null,
+    [opponentId, room.state.players]
+  );
+
+  const opponentSnapshot = opponentId ? room.state.opponentSnapshots[opponentId] : null;
+
+  const connectToRoom = () => {
+    const nextEndpoint = endpointInput.trim();
+    const nextRoomId = roomIdInput.trim();
+    const nextName = playerNameInput.trim();
+    if (!nextEndpoint || !nextRoomId || !nextName) return;
+
+    setJoinedProvider(providerInput);
+    setJoinedEndpoint(nextEndpoint);
+    setJoinedRoomId(nextRoomId);
+    setJoinedPlayerName(nextName);
+  };
+
+  const disconnectFromRoom = () => {
+    room.disconnect();
+    setJoinedRoomId(null);
+    setJoinedEndpoint("");
+    setJoinedPlayerName("");
+  };
 
   return (
     <div className="tetris-page">
@@ -577,9 +216,9 @@ export default function TetrisWebApp() {
           <Card className="tetris-card-shell tetris-side-card">
             <CardHeader className="tetris-card-head">
               <CardTitle className="tetris-card-title-row">
-                <span className="tetris-card-title-text">플레이 정보</span>
+                <span className="tetris-card-title-text">Stats</span>
                 <Badge variant="secondary" className="tetris-level-badge">
-                  Lv.{level}
+                  Lv.{game.level}
                 </Badge>
               </CardTitle>
             </CardHeader>
@@ -587,26 +226,28 @@ export default function TetrisWebApp() {
               <div className="tetris-stat-grid">
                 <div className="tetris-panel">
                   <div className="tetris-stat-label">Score</div>
-                  <div className="tetris-stat-value">{score}</div>
+                  <div className="tetris-stat-value">{game.score}</div>
                 </div>
                 <div className="tetris-panel">
                   <div className="tetris-stat-label">Lines</div>
-                  <div className="tetris-stat-value">{lines}</div>
+                  <div className="tetris-stat-value">{game.lines}</div>
                 </div>
               </div>
 
               <div className="tetris-panel tetris-next-block">
                 <div className="tetris-stat-label">Hold</div>
                 <div className="tetris-preview-frame">
-                  <PreviewPiece pieceKey={holdKey} />
+                  <PreviewPiece pieceKey={game.holdKey} />
                 </div>
-                <div className="tetris-preview-hint">{hasHeldThisTurn ? "Locked until piece lands" : "C / Shift"}</div>
+                <div className="tetris-preview-hint">
+                  {game.hasHeldThisTurn ? "Locked until piece lands" : "C / Shift"}
+                </div>
               </div>
 
               <div className="tetris-panel tetris-next-block">
                 <div className="tetris-stat-label">Next</div>
                 <div className="tetris-preview-stack">
-                  {nextQueue.map((pieceKey, index) => (
+                  {game.nextQueue.map((pieceKey, index) => (
                     <div key={`${pieceKey}-${index}`} className="tetris-preview-slot">
                       <div className="tetris-preview-frame">
                         <PreviewPiece pieceKey={pieceKey} />
@@ -621,7 +262,7 @@ export default function TetrisWebApp() {
                   size="default"
                   className="tetris-btn-primary"
                   onClick={() => setIsRunning((prev) => !prev)}
-                  disabled={isGameOver}
+                  disabled={game.isGameOver}
                 >
                   {isRunning ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
                   {isRunning ? "Pause" : "Resume"}
@@ -633,19 +274,20 @@ export default function TetrisWebApp() {
               </div>
 
               <div className="tetris-panel tetris-controls">
-                <div className="tetris-controls-heading">조작 방법</div>
+                <div className="tetris-controls-heading">Controls</div>
                 <div className="tetris-controls-list">
                   <div className="tetris-control-line">
-                    <ArrowLeft className="tetris-control-icon" /> / <ArrowRight className="tetris-control-icon" /> 이동
+                    <ArrowLeft className="tetris-control-icon" /> / <ArrowRight className="tetris-control-icon" /> Move
                   </div>
                   <div className="tetris-control-line">
-                    <ArrowDown className="tetris-control-icon" /> 소프트 드롭
+                    <ArrowDown className="tetris-control-icon" /> Soft Drop
                   </div>
                   <div className="tetris-control-line">
-                    <RotateCw className="tetris-control-icon" /> 회전
+                    <RotateCw className="tetris-control-icon" /> Rotate
                   </div>
-                  <div>Space 하드 드롭</div>
-                  <div className="tetris-controls-muted">P 일시정지, R 다시 시작</div>
+                  <div>C / Shift Hold</div>
+                  <div>Space Hard Drop</div>
+                  <div className="tetris-controls-muted">P Pause, R Restart</div>
                 </div>
               </div>
             </CardContent>
@@ -677,6 +319,7 @@ export default function TetrisWebApp() {
                               boxShadow: `inset 0 0 0 1px ${PIECES[cell.ghostKey].ghost}`,
                             }
                           : undefined;
+
                         return (
                           <div
                             key={`${rowIndex}-${colIndex}`}
@@ -688,14 +331,14 @@ export default function TetrisWebApp() {
                     )}
                   </div>
 
-                  {isGameOver && (
+                  {game.isGameOver && (
                     <div className="tetris-gameover-backdrop">
                       <div className="tetris-gameover-panel">
                         <div className="tetris-gameover-title">Game Over</div>
-                        <div className="tetris-gameover-label">최종 점수</div>
-                        <div className="tetris-gameover-score">{score}</div>
+                        <div className="tetris-gameover-label">Final Score</div>
+                        <div className="tetris-gameover-score">{game.score}</div>
                         <Button size="lg" className="tetris-gameover-btn" onClick={resetGame}>
-                          다시 시작
+                          Restart
                         </Button>
                       </div>
                     </div>
@@ -707,12 +350,97 @@ export default function TetrisWebApp() {
 
           <Card className="tetris-card-shell tetris-side-card">
             <CardHeader className="tetris-card-head">
-              <CardTitle className="tetris-aside-title">확장 아이디어</CardTitle>
+              <CardTitle className="tetris-aside-title">Multiplayer Draft</CardTitle>
             </CardHeader>
             <CardContent className="tetris-aside-body">
-              <div className="tetris-panel">현재: 싱글 플레이, 점수 집계, 고스트 피스, 키보드 조작</div>
-              <div className="tetris-panel">다음: 랭킹, 터치 UX, 사운드, 7-bag, 서버 연동</div>
-              <div className="tetris-panel">배포: Vercel, Netlify, Cloudflare Pages</div>
+              <div className="tetris-panel tetris-room-panel">
+                <div className="tetris-stat-label">Realtime Provider</div>
+                <div className="tetris-provider-tabs">
+                  <Button
+                    variant={providerInput === REALTIME_PROVIDERS.PARTYKIT ? "default" : "secondary"}
+                    onClick={() => setProviderInput(REALTIME_PROVIDERS.PARTYKIT)}
+                  >
+                    PartyKit
+                  </Button>
+                  <Button
+                    variant={providerInput === REALTIME_PROVIDERS.WEBSOCKET ? "default" : "secondary"}
+                    onClick={() => setProviderInput(REALTIME_PROVIDERS.WEBSOCKET)}
+                  >
+                    Custom WS
+                  </Button>
+                </div>
+                <div className="tetris-stat-label">
+                  {providerInput === REALTIME_PROVIDERS.PARTYKIT ? "PartyKit Host" : "WebSocket Endpoint"}
+                </div>
+                <Input
+                  value={endpointInput}
+                  onChange={(event) => setEndpointInput(event.target.value)}
+                  placeholder={
+                    providerInput === REALTIME_PROVIDERS.PARTYKIT
+                      ? "your-project.your-name.partykit.dev"
+                      : "ws://localhost:8787/rooms"
+                  }
+                />
+                <div className="tetris-stat-label">Room ID</div>
+                <Input
+                  value={roomIdInput}
+                  onChange={(event) => setRoomIdInput(event.target.value)}
+                  placeholder="demo-room"
+                />
+                <div className="tetris-stat-label">Player Name</div>
+                <Input
+                  value={playerNameInput}
+                  onChange={(event) => setPlayerNameInput(event.target.value)}
+                  placeholder="Player"
+                />
+                <div className="tetris-room-btns">
+                  <Button onClick={connectToRoom} disabled={!endpointInput.trim() || !roomIdInput.trim() || !playerNameInput.trim()}>
+                    Join Room
+                  </Button>
+                  <Button variant="secondary" onClick={disconnectFromRoom} disabled={!joinedRoomId}>
+                    Leave
+                  </Button>
+                </div>
+                <div className="tetris-room-status">
+                  <div>Status: {room.state.isConnected ? "Connected" : "Offline"}</div>
+                  <div>Provider: {joinedRoomId ? joinedProvider : providerInput}</div>
+                  <div>Phase: {room.state.phase}</div>
+                  <div>Room: {joinedRoomId ?? "-"}</div>
+                  {room.state.error ? <div className="tetris-room-error">{room.state.error}</div> : null}
+                </div>
+                <div className="tetris-room-btns">
+                  <Button variant="secondary" onClick={() => room.setReady(true)} disabled={!room.state.isConnected}>
+                    Ready
+                  </Button>
+                  <Button variant="secondary" onClick={() => room.setReady(false)} disabled={!room.state.isConnected}>
+                    Unready
+                  </Button>
+                </div>
+              </div>
+
+              <div className="tetris-panel">
+                <div className="tetris-stat-label">Players</div>
+                <div className="tetris-room-players">
+                  {room.state.players.length === 0 ? (
+                    <div className="tetris-controls-muted">No room members yet</div>
+                  ) : (
+                    room.state.players.map((player) => (
+                      <div key={player.id} className="tetris-room-player">
+                        <span>{player.name}</span>
+                        <Badge variant="secondary">
+                          {room.state.readyMap[player.id] ? "Ready" : "Idle"}
+                        </Badge>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="tetris-panel">
+                <div className="tetris-stat-label">Opponent</div>
+                <div className="tetris-opponent-title">{opponentPlayer?.name ?? "Waiting for opponent"}</div>
+                <OpponentBoard snapshot={opponentSnapshot} />
+              </div>
             </CardContent>
           </Card>
         </div>
