@@ -1,11 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Play, Pause, RotateCw, RefreshCw, ArrowDown, ArrowLeft, ArrowRight } from "lucide-react";
+import "./App.css";
 
 const BOARD_WIDTH = 10;
 const BOARD_HEIGHT = 20;
+/** Padding around the cell grid inside the bezel (Tailwind p-1 outer + p-2 inner, rounded). */
+const BOARD_BEZEL_CHROME = 28;
+const BOARD_CELL_MIN = 14;
+const BOARD_CELL_MAX = 128;
 const EMPTY = 0;
 const BASE_DROP_MS = 700;
 const MIN_DROP_MS = 120;
@@ -293,13 +298,17 @@ function PreviewPiece({ pieceKey }) {
   if (!pieceKey) return null;
   const piece = PIECES[pieceKey];
   const shape = piece.cells[0];
+  const cols = shape[0].length;
   return (
-    <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${shape[0].length}, minmax(0, 1fr))` }}>
+    <div
+      className="grid w-fit gap-0"
+      style={{ gridTemplateColumns: `repeat(${cols}, auto)` }}
+    >
       {shape.flatMap((row, rowIndex) =>
         row.map((cell, colIndex) => (
           <div
             key={`${rowIndex}-${colIndex}`}
-            className={`h-4 w-4 rounded-sm border border-white/10 ${cell ? piece.color : "bg-white/5"}`}
+            className={`box-border h-4 w-4 shrink-0 rounded-sm border border-white/10 ${cell ? piece.color : "bg-white/5"}`}
           />
         ))
       )}
@@ -320,6 +329,27 @@ export default function TetrisWebApp() {
   const currentRef = useRef(current);
   const isRunningRef = useRef(isRunning);
   const isGameOverRef = useRef(isGameOver);
+  const boardSlotRef = useRef(null);
+  /** Square cells; size from min(slotW/10, slotH/20) so board aspect stays 1:2. */
+  const [boardCellPx, setBoardCellPx] = useState(26);
+
+  useLayoutEffect(() => {
+    const el = boardSlotRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const cr = entries[0]?.contentRect;
+      if (!cr || cr.width < 40 || cr.height < 40) return;
+      const innerW = cr.width - BOARD_BEZEL_CHROME;
+      const innerH = cr.height - BOARD_BEZEL_CHROME;
+      const byW = Math.floor(innerW / BOARD_WIDTH);
+      const byH = Math.floor(innerH / BOARD_HEIGHT);
+      const next = Math.min(byW, byH);
+      const clamped = Math.max(BOARD_CELL_MIN, Math.min(next, BOARD_CELL_MAX));
+      setBoardCellPx((prev) => (prev === clamped ? prev : clamped));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     boardRef.current = board;
@@ -487,113 +517,129 @@ export default function TetrisWebApp() {
   }, [board, current, ghostPiece]);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-50 p-4 md:p-8">
-      <div className="mx-auto max-w-6xl grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)_260px] gap-6 items-start">
-        <Card className="rounded-3xl border-white/10 bg-white/5 backdrop-blur">
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between text-2xl">
-              <span>Tetris</span>
-              <Badge variant="secondary" className="rounded-full">Level {level}</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-2xl bg-black/30 p-4">
-                <div className="text-sm text-zinc-400">Score</div>
-                <div className="text-2xl font-bold">{score}</div>
-              </div>
-              <div className="rounded-2xl bg-black/30 p-4">
-                <div className="text-sm text-zinc-400">Lines</div>
-                <div className="text-2xl font-bold">{lines}</div>
-              </div>
-            </div>
+    <div className="tetris-page">
+      <div className="tetris-bg-gradient" aria-hidden />
+      <div className="tetris-bg-noise" aria-hidden />
+      <div className="tetris-bg-vignette" aria-hidden />
 
-            <div className="rounded-2xl bg-black/30 p-4 space-y-2">
-              <div className="text-sm text-zinc-400">Next</div>
-              <PreviewPiece pieceKey={nextKey} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <Button className="rounded-2xl" onClick={() => setIsRunning((prev) => !prev)} disabled={isGameOver}>
-                {isRunning ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
-                {isRunning ? "Pause" : "Resume"}
-              </Button>
-              <Button className="rounded-2xl" variant="secondary" onClick={resetGame}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Restart
-              </Button>
-            </div>
-
-            <div className="rounded-2xl bg-black/30 p-4 text-sm text-zinc-300 space-y-2">
-              <div className="font-medium">Controls</div>
-              <div className="grid gap-2">
-                <div className="flex items-center gap-2"><ArrowLeft className="h-4 w-4" /> / <ArrowRight className="h-4 w-4" /> 이동</div>
-                <div className="flex items-center gap-2"><ArrowDown className="h-4 w-4" /> 소프트 드롭</div>
-                <div className="flex items-center gap-2"><RotateCw className="h-4 w-4" /> ↑ 회전</div>
-                <div>Space 하드 드롭</div>
-                <div>P 일시정지 / R 재시작</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-3xl border-white/10 bg-white/5 backdrop-blur overflow-hidden">
-          <CardContent className="p-4 md:p-6">
-            <div className="relative mx-auto w-fit">
-              <div
-                className="grid gap-1 rounded-2xl bg-black/60 p-3 shadow-2xl"
-                style={{ gridTemplateColumns: `repeat(${BOARD_WIDTH}, minmax(0, 1fr))` }}
-              >
-                {renderedBoard.flatMap((row, rowIndex) =>
-                  row.map((cell, colIndex) => {
-                    const isGhost = cell < 0;
-                    const absCell = Math.abs(cell);
-                    const colorClass = absCell ? PIECE_COLOR_BY_ID[absCell] : "bg-zinc-900";
-                    return (
-                      <div
-                        key={`${rowIndex}-${colIndex}`}
-                        className={`h-6 w-6 md:h-7 md:w-7 rounded-sm border ${
-                          isGhost
-                            ? "border-white/20 bg-transparent"
-                            : absCell
-                              ? `${colorClass} border-white/10`
-                              : "border-white/5"
-                        }`}
-                      />
-                    );
-                  })
-                )}
-              </div>
-
-              {isGameOver && (
-                <div className="absolute inset-0 grid place-items-center rounded-2xl bg-black/70 backdrop-blur-sm">
-                  <div className="text-center space-y-3">
-                    <div className="text-3xl font-bold">Game Over</div>
-                    <div className="text-zinc-300">최종 점수 {score}</div>
-                    <Button className="rounded-2xl" onClick={resetGame}>다시 시작</Button>
-                  </div>
+      <div className="tetris-main">
+        <div className="tetris-grid-layout">
+          <Card className="tetris-card-shell tetris-side-card">
+            <CardHeader className="tetris-card-head">
+              <CardTitle className="tetris-card-title-row">
+                <span className="tetris-card-title-text">플레이 정보</span>
+                <Badge variant="secondary" className="tetris-level-badge">
+                  Lv.{level}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="tetris-card-body">
+              <div className="tetris-stat-grid">
+                <div className="tetris-panel">
+                  <div className="tetris-stat-label">Score</div>
+                  <div className="tetris-stat-value">{score}</div>
                 </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+                <div className="tetris-panel">
+                  <div className="tetris-stat-label">Lines</div>
+                  <div className="tetris-stat-value">{lines}</div>
+                </div>
+              </div>
 
-        <Card className="rounded-3xl border-white/10 bg-white/5 backdrop-blur lg:sticky lg:top-8">
-          <CardHeader>
-            <CardTitle className="text-xl">서비스 확장 포인트</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-zinc-300">
-            <div className="rounded-2xl bg-black/30 p-4">
-              현재 구현: 싱글 플레이, 점수, 레벨, 고스트 피스, 키보드/버튼 조작
-            </div>
-            <div className="rounded-2xl bg-black/30 p-4">
-              다음 단계 추천: 랭킹 저장, 모바일 터치 UX, 사운드, 홀드 기능, 7-bag 랜덤, 서버 연동
-            </div>
-            <div className="rounded-2xl bg-black/30 p-4">
-              배포 대상 예시: Vercel, Netlify, Cloudflare Pages
-            </div>
-          </CardContent>
-        </Card>
+              <div className="tetris-panel tetris-next-block">
+                <div className="tetris-stat-label">Next</div>
+                <PreviewPiece pieceKey={nextKey} />
+              </div>
+
+              <div className="tetris-btn-row">
+                <Button
+                  size="default"
+                  className="tetris-btn-primary"
+                  onClick={() => setIsRunning((prev) => !prev)}
+                  disabled={isGameOver}
+                >
+                  {isRunning ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
+                  {isRunning ? "Pause" : "Resume"}
+                </Button>
+                <Button size="default" className="tetris-btn-secondary" variant="secondary" onClick={resetGame}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Restart
+                </Button>
+              </div>
+
+              <div className="tetris-panel tetris-controls">
+                <div className="tetris-controls-heading">조작 방법</div>
+                <div className="tetris-controls-list">
+                  <div className="tetris-control-line">
+                    <ArrowLeft className="tetris-control-icon" /> / <ArrowRight className="tetris-control-icon" /> 이동
+                  </div>
+                  <div className="tetris-control-line">
+                    <ArrowDown className="tetris-control-icon" /> 소프트 드롭
+                  </div>
+                  <div className="tetris-control-line">
+                    <RotateCw className="tetris-control-icon" /> 회전
+                  </div>
+                  <div>Space 하드 드롭</div>
+                  <div className="tetris-controls-muted">P 일시정지, R 다시 시작</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="tetris-card-shell tetris-board-card">
+            <CardContent className="tetris-board-content">
+              <div ref={boardSlotRef} className="tetris-board-slot">
+                <div className="tetris-board-bezel">
+                  <div
+                    className="tetris-board-grid"
+                    style={{
+                      gridTemplateColumns: `repeat(${BOARD_WIDTH}, ${boardCellPx}px)`,
+                      gridAutoRows: `${boardCellPx}px`,
+                    }}
+                  >
+                    {renderedBoard.flatMap((row, rowIndex) =>
+                      row.map((cell, colIndex) => {
+                        const isGhost = cell < 0;
+                        const absCell = Math.abs(cell);
+                        const pieceClass = !isGhost && absCell ? PIECE_COLOR_BY_ID[absCell] : "";
+                        return (
+                          <div
+                            key={`${rowIndex}-${colIndex}`}
+                            className={`tetris-cell${isGhost ? " tetris-cell--ghost" : ""}${!isGhost && absCell ? ` tetris-cell--block ${pieceClass}` : ""}${!isGhost && !absCell ? " tetris-cell--hole" : ""}`}
+                            style={{ width: boardCellPx, height: boardCellPx }}
+                          />
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {isGameOver && (
+                    <div className="tetris-gameover-backdrop">
+                      <div className="tetris-gameover-panel">
+                        <div className="tetris-gameover-title">Game Over</div>
+                        <div className="tetris-gameover-label">최종 점수</div>
+                        <div className="tetris-gameover-score">{score}</div>
+                        <Button size="lg" className="tetris-gameover-btn" onClick={resetGame}>
+                          다시 시작
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="tetris-card-shell tetris-side-card">
+            <CardHeader className="tetris-card-head">
+              <CardTitle className="tetris-aside-title">확장 아이디어</CardTitle>
+            </CardHeader>
+            <CardContent className="tetris-aside-body">
+              <div className="tetris-panel">현재: 싱글 플레이, 점수 집계, 고스트 피스, 키보드 조작</div>
+              <div className="tetris-panel">다음: 랭킹, 터치 UX, 사운드, 7-bag, 서버 연동</div>
+              <div className="tetris-panel">배포: Vercel, Netlify, Cloudflare Pages</div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
