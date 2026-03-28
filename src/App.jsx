@@ -19,6 +19,7 @@ const PIECES = {
   I: {
     id: 1,
     color: "bg-cyan-400",
+    ghost: "rgba(34, 211, 238, 0.55)",
     cells: [
       [
         [0, 0, 0, 0],
@@ -49,6 +50,7 @@ const PIECES = {
   O: {
     id: 2,
     color: "bg-yellow-400",
+    ghost: "rgba(250, 204, 21, 0.55)",
     cells: [
       [
         [1, 1],
@@ -71,6 +73,7 @@ const PIECES = {
   T: {
     id: 3,
     color: "bg-violet-500",
+    ghost: "rgba(139, 92, 246, 0.55)",
     cells: [
       [
         [0, 1, 0],
@@ -97,6 +100,7 @@ const PIECES = {
   S: {
     id: 4,
     color: "bg-green-500",
+    ghost: "rgba(34, 197, 94, 0.55)",
     cells: [
       [
         [0, 1, 1],
@@ -123,6 +127,7 @@ const PIECES = {
   Z: {
     id: 5,
     color: "bg-red-500",
+    ghost: "rgba(239, 68, 68, 0.55)",
     cells: [
       [
         [1, 1, 0],
@@ -149,6 +154,7 @@ const PIECES = {
   J: {
     id: 6,
     color: "bg-blue-500",
+    ghost: "rgba(59, 130, 246, 0.55)",
     cells: [
       [
         [1, 0, 0],
@@ -175,6 +181,7 @@ const PIECES = {
   L: {
     id: 7,
     color: "bg-orange-500",
+    ghost: "rgba(249, 115, 22, 0.55)",
     cells: [
       [
         [0, 0, 1],
@@ -212,6 +219,10 @@ function createEmptyBoard() {
 
 function randomPieceKey() {
   return PIECE_KEYS[Math.floor(Math.random() * PIECE_KEYS.length)];
+}
+
+function createNextQueue(size = 3) {
+  return Array.from({ length: size }, () => randomPieceKey());
 }
 
 function makePiece(key = randomPieceKey()) {
@@ -296,19 +307,21 @@ function hardDropY(board, piece) {
 
 function PreviewPiece({ pieceKey }) {
   if (!pieceKey) return null;
+
   const piece = PIECES[pieceKey];
   const shape = piece.cells[0];
   const cols = shape[0].length;
+
   return (
     <div
-      className="grid w-fit gap-0"
+      className="tetris-preview-grid"
       style={{ gridTemplateColumns: `repeat(${cols}, auto)` }}
     >
       {shape.flatMap((row, rowIndex) =>
         row.map((cell, colIndex) => (
           <div
             key={`${rowIndex}-${colIndex}`}
-            className={`box-border h-4 w-4 shrink-0 rounded-sm border border-white/10 ${cell ? piece.color : "bg-white/5"}`}
+            className={`tetris-preview-cell ${cell ? piece.color : "tetris-preview-cell--empty"}`}
           />
         ))
       )}
@@ -319,7 +332,9 @@ function PreviewPiece({ pieceKey }) {
 export default function TetrisWebApp() {
   const [board, setBoard] = useState(createEmptyBoard);
   const [current, setCurrent] = useState(() => makePiece());
-  const [nextKey, setNextKey] = useState(() => randomPieceKey());
+  const [nextQueue, setNextQueue] = useState(() => createNextQueue());
+  const [holdKey, setHoldKey] = useState(null);
+  const [hasHeldThisTurn, setHasHeldThisTurn] = useState(false);
   const [score, setScore] = useState(0);
   const [lines, setLines] = useState(0);
   const [level, setLevel] = useState(1);
@@ -327,6 +342,7 @@ export default function TetrisWebApp() {
   const [isGameOver, setIsGameOver] = useState(false);
   const boardRef = useRef(board);
   const currentRef = useRef(current);
+  const nextQueueRef = useRef(nextQueue);
   const isRunningRef = useRef(isRunning);
   const isGameOverRef = useRef(isGameOver);
   const boardSlotRef = useRef(null);
@@ -360,6 +376,10 @@ export default function TetrisWebApp() {
   }, [current]);
 
   useEffect(() => {
+    nextQueueRef.current = nextQueue;
+  }, [nextQueue]);
+
+  useEffect(() => {
     isRunningRef.current = isRunning;
   }, [isRunning]);
 
@@ -368,15 +388,16 @@ export default function TetrisWebApp() {
   }, [isGameOver]);
 
   const spawnNextPiece = useCallback((activeBoard) => {
+    const [nextKey, ...restQueue] = nextQueueRef.current;
     const fresh = makePiece(nextKey);
-    setNextKey(randomPieceKey());
+    setNextQueue([...restQueue, randomPieceKey()]);
     if (collides(activeBoard, fresh)) {
       setIsGameOver(true);
       setIsRunning(false);
       return null;
     }
     return fresh;
-  }, [nextKey]);
+  }, []);
 
   const lockPiece = useCallback((lockedPiece) => {
     const merged = mergePiece(boardRef.current, lockedPiece);
@@ -391,7 +412,10 @@ export default function TetrisWebApp() {
       setScore((prev) => prev + lineScore(cleared) * level);
     }
     const fresh = spawnNextPiece(clearedBoard);
-    if (fresh) setCurrent(fresh);
+    if (fresh) {
+      setHasHeldThisTurn(false);
+      setCurrent(fresh);
+    }
   }, [level, spawnNextPiece]);
 
   const stepDown = useCallback(() => {
@@ -410,7 +434,9 @@ export default function TetrisWebApp() {
     const first = makePiece();
     setBoard(freshBoard);
     setCurrent(first);
-    setNextKey(randomPieceKey());
+    setNextQueue(createNextQueue());
+    setHoldKey(null);
+    setHasHeldThisTurn(false);
     setScore(0);
     setLines(0);
     setLevel(1);
@@ -459,9 +485,32 @@ export default function TetrisWebApp() {
     setCurrent((prev) => rotateWithKick(boardRef.current, prev));
   }, []);
 
+  const hold = useCallback(() => {
+    if (!isRunningRef.current || isGameOverRef.current || hasHeldThisTurn) return;
+
+    const activePiece = currentRef.current;
+    setHasHeldThisTurn(true);
+
+    if (!holdKey) {
+      setHoldKey(activePiece.key);
+      const fresh = spawnNextPiece(boardRef.current);
+      if (fresh) setCurrent(fresh);
+      return;
+    }
+
+    const swapped = makePiece(holdKey);
+    setHoldKey(activePiece.key);
+    if (collides(boardRef.current, swapped)) {
+      setIsGameOver(true);
+      setIsRunning(false);
+      return;
+    }
+    setCurrent(swapped);
+  }, [hasHeldThisTurn, holdKey, spawnNextPiece]);
+
   useEffect(() => {
     const onKeyDown = (event) => {
-      if (["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", " "].includes(event.key)) {
+      if (["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", " ", "Shift"].includes(event.key) || event.key.toLowerCase() === "c") {
         event.preventDefault();
       }
       if (event.key.toLowerCase() === "p") {
@@ -478,11 +527,12 @@ export default function TetrisWebApp() {
       if (event.key === "ArrowDown") softDrop();
       if (event.key === "ArrowUp") rotate();
       if (event.key === " ") hardDrop();
+      if (event.key === "Shift" || event.key.toLowerCase() === "c") hold();
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [hardDrop, move, resetGame, rotate, softDrop]);
+  }, [hardDrop, hold, move, resetGame, rotate, softDrop]);
 
   const ghostPiece = useMemo(() => hardDropY(board, current), [board, current]);
 
@@ -496,7 +546,7 @@ export default function TetrisWebApp() {
         const x = ghostPiece.x + col;
         const y = ghostPiece.y + row;
         if (y >= 0 && y < BOARD_HEIGHT && x >= 0 && x < BOARD_WIDTH && canvas[y][x] === EMPTY) {
-          canvas[y][x] = -PIECES[current.key].id;
+          canvas[y][x] = { ghostKey: current.key };
         }
       }
     }
@@ -546,8 +596,24 @@ export default function TetrisWebApp() {
               </div>
 
               <div className="tetris-panel tetris-next-block">
+                <div className="tetris-stat-label">Hold</div>
+                <div className="tetris-preview-frame">
+                  <PreviewPiece pieceKey={holdKey} />
+                </div>
+                <div className="tetris-preview-hint">{hasHeldThisTurn ? "Locked until piece lands" : "C / Shift"}</div>
+              </div>
+
+              <div className="tetris-panel tetris-next-block">
                 <div className="tetris-stat-label">Next</div>
-                <PreviewPiece pieceKey={nextKey} />
+                <div className="tetris-preview-stack">
+                  {nextQueue.map((pieceKey, index) => (
+                    <div key={`${pieceKey}-${index}`} className="tetris-preview-slot">
+                      <div className="tetris-preview-frame">
+                        <PreviewPiece pieceKey={pieceKey} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="tetris-btn-row">
@@ -598,14 +664,24 @@ export default function TetrisWebApp() {
                   >
                     {renderedBoard.flatMap((row, rowIndex) =>
                       row.map((cell, colIndex) => {
-                        const isGhost = cell < 0;
-                        const absCell = Math.abs(cell);
-                        const pieceClass = !isGhost && absCell ? PIECE_COLOR_BY_ID[absCell] : "";
+                        const isGhost = typeof cell === "object" && cell !== null && "ghostKey" in cell;
+                        const absCell = typeof cell === "number" ? Math.abs(cell) : 0;
+                        const pieceClass = isGhost
+                          ? PIECES[cell.ghostKey].color
+                          : absCell
+                            ? PIECE_COLOR_BY_ID[absCell]
+                            : "";
+                        const ghostStyle = isGhost
+                          ? {
+                              borderColor: PIECES[cell.ghostKey].ghost,
+                              boxShadow: `inset 0 0 0 1px ${PIECES[cell.ghostKey].ghost}`,
+                            }
+                          : undefined;
                         return (
                           <div
                             key={`${rowIndex}-${colIndex}`}
                             className={`tetris-cell${isGhost ? " tetris-cell--ghost" : ""}${!isGhost && absCell ? ` tetris-cell--block ${pieceClass}` : ""}${!isGhost && !absCell ? " tetris-cell--hole" : ""}`}
-                            style={{ width: boardCellPx, height: boardCellPx }}
+                            style={{ width: boardCellPx, height: boardCellPx, ...ghostStyle }}
                           />
                         );
                       })
